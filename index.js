@@ -68,6 +68,7 @@ const server = http.createServer((req, res) => {
                         seed: seed,
                         role: 'p2',
                         opponentId: opponentId,
+                        opponentName: players.get(opponentId).name,
                         opponentTeam: players.get(opponentId).team
                     });
                 }
@@ -123,6 +124,7 @@ const server = http.createServer((req, res) => {
                 gameId: game.id,
                 seed: game.seed,
                 opponentId: opponentId,
+                opponentName: (opponent ? opponent.name : "Trainer"),
                 opponentTeam: opTeam,
                 waitingForOpponent: (myAction !== null),
                 chat: chatObj
