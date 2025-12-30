@@ -112,7 +112,8 @@ const server = http.createServer((req, res) => {
             return sendJSON(res, { 
                 status: 'battle_ongoing', 
                 gameId: game.id,        
-                seed: game.seed,        
+                seed: game.seed,      
+                turn: game.turn,  
                 opponentTeam: opTeam,   
                 waitingForOpponent: (myAction !== null),
                 chat: chatObj 
