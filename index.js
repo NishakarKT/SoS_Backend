@@ -1,6 +1,5 @@
 const http = require('http');
 
-// --- DATA STORE ---
 const players = new Map();
 const games = new Map();
 const queue = [];
@@ -51,10 +50,10 @@ const server = http.createServer((req, res) => {
 
                     games.set(gameId, {
                         id: gameId, p1: opponentId, p2: pid,
-                        turn: 1, p1Action: null, p2Action: null,
+                        turn: 1, // Server Authority on Turn Number
+                        p1Action: null, p2Action: null,
                         p1Confirmed: false, p2Confirmed: false,
                         seed: seed,
-                        // NEW: Chat storage
                         latestChat: { sender: null, msg: "", timestamp: 0 }
                     });
 
@@ -88,25 +87,25 @@ const server = http.createServer((req, res) => {
             const opAction = isP1 ? game.p2Action : game.p1Action;
             
             const iAmConfirmed = isP1 ? game.p1Confirmed : game.p2Confirmed;
-            
-            // PREPARE CHAT OBJECT
             const chatObj = game.latestChat || { sender: "", msg: "", timestamp: 0 };
 
-            // SYNCING CHECK
+            // SAFETY: If I am confirmed, I must wait for the other player.
             if (iAmConfirmed) return sendJSON(res, { status: 'syncing', chat: chatObj });
 
-            // IF BOTH MOVED -> SEND DATA
+            // TURN READY
             if (game.p1Action && game.p2Action) {
                 return sendJSON(res, { 
                     status: 'turn_ready', 
-                    gameId: game.id, turn: game.turn, seed: game.seed,
+                    gameId: game.id, 
+                    turn: game.turn, // Client MUST sync this
+                    seed: game.seed,
                     myMoveType: myAction.type, myMoveIndex: myAction.index,
                     opMoveType: opAction.type, opMoveIndex: opAction.index,
                     myQueuedSwitch: myAction.queuedSwitch || 0,
                     opQueuedSwitch: opAction.queuedSwitch || 0,
                     opHpState: opAction.hpState || "", 
                     opponentTeam: opTeam,
-                    chat: chatObj // Send Chat
+                    chat: chatObj 
                 });
             }
 
@@ -116,17 +115,23 @@ const server = http.createServer((req, res) => {
                 seed: game.seed,        
                 opponentTeam: opTeam,   
                 waitingForOpponent: (myAction !== null),
-                chat: chatObj // Send Chat
+                chat: chatObj 
             });
         }
 
-        // --- 3. ACTION ---
+        // --- 3. ACTION (STRICT VALIDATION ADDED) ---
         if (url === '/action' && req.method === 'POST') {
             const game = games.get(data.gameId);
             if (!game) return sendJSON(res, { error: 'No game' });
 
-            // console.log(`${ts()} ACTION: Turn ${game.turn} | Player ${data.id} | Type: ${data.actionType}`);
-            
+            // *** FIX: Strict Turn Validation ***
+            // If client sends action for Turn 2, but server is on Turn 1, ignore it.
+            // Or if client re-sends Turn 1 action, allow it (idempotency).
+            if (data.turn && data.turn !== game.turn) {
+                console.log(`${ts()} REJECTED ACTION: Client Turn ${data.turn} != Server Turn ${game.turn}`);
+                return sendJSON(res, { error: 'turn_mismatch', serverTurn: game.turn });
+            }
+
             const payload = { 
                 type: data.actionType, 
                 index: data.index, 
@@ -140,17 +145,11 @@ const server = http.createServer((req, res) => {
             return sendJSON(res, { status: 'ok' });
         }
 
-        // --- 4. CHAT (NEW) ---
+        // --- 4. CHAT ---
         if (url === '/chat' && req.method === 'POST') {
             const game = games.get(data.gameId);
             if (game) {
-                console.log(`${ts()} CHAT: ${data.id} says: ${data.msg}`);
-                // Update latest chat on the game object
-                game.latestChat = {
-                    sender: data.id,
-                    msg: data.msg,
-                    timestamp: Date.now()
-                };
+                game.latestChat = { sender: data.id, msg: data.msg, timestamp: Date.now() };
             }
             return sendJSON(res, { status: 'ok' });
         }
@@ -163,6 +162,7 @@ const server = http.createServer((req, res) => {
                 if (game.p1 === id) game.p1Confirmed = true;
                 if (game.p2 === id) game.p2Confirmed = true;
                 
+                // Only advance turn if BOTH confirmed
                 if (game.p1Confirmed && game.p2Confirmed) {
                     console.log(`${ts()} NEW TURN: Turn ${game.turn + 1} Started`);
                     game.p1Action = null; game.p2Action = null;
@@ -184,4 +184,4 @@ const server = http.createServer((req, res) => {
     });
 });
 
-server.listen(3000, () => console.log('Battle Server with Chat (Port 3000)'));
+server.listen(3000, () => console.log('Battle Server (Port 3000) - Strict Mode'));
